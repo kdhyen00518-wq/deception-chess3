@@ -33,10 +33,32 @@
   </div>
 
   <div class="main-layout">
-    <div class="board-container">
-      <div id="board" class="board"></div>
+    <!-- 체스판 및 플레이어 정보 바 -->
+    <div class="game-area">
+      <!-- 상단 플레이어 바 (기본: 흑 / 반전 시: 백) -->
+      <div class="player-bar" id="top-player-bar">
+        <div class="player-info">
+          <span id="top-player-name">상대 (흑)</span>
+          <span id="top-player-lead" class="material-lead" style="display: none;"></span>
+        </div>
+        <div class="captured-tray" id="top-captured-tray"></div>
+      </div>
+
+      <div class="board-container">
+        <div id="board" class="board"></div>
+      </div>
+
+      <!-- 하단 플레이어 바 (기본: 백 / 반전 시: 흑) -->
+      <div class="player-bar" id="bottom-player-bar">
+        <div class="player-info">
+          <span id="bottom-player-name">나 (백)</span>
+          <span id="bottom-player-lead" class="material-lead" style="display: none;"></span>
+        </div>
+        <div class="captured-tray" id="bottom-captured-tray"></div>
+      </div>
     </div>
 
+    <!-- 우측 컨트롤 패널 -->
     <div class="side-panel">
       <div class="panel-box">
         <div class="panel-title">게임 모드</div>
@@ -127,6 +149,9 @@
   </div>
 
   <script>
+    // 점수 계산용 기물 가치 (표준 체스 점수)
+    const MATERIAL_POINTS = { 'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 0 };
+
     class WebChessController {
       constructor() {
         this.boardElement = document.getElementById('board');
@@ -136,12 +161,22 @@
         this.ruleModal = document.getElementById('rule-modal');
         this.promotionModal = document.getElementById('promotion-modal');
 
+        this.topPlayerName = document.getElementById('top-player-name');
+        this.bottomPlayerName = document.getElementById('bottom-player-name');
+        this.topPlayerLead = document.getElementById('top-player-lead');
+        this.bottomPlayerLead = document.getElementById('bottom-player-lead');
+        this.topCapturedTray = document.getElementById('top-captured-tray');
+        this.bottomCapturedTray = document.getElementById('bottom-captured-tray');
+
         this.gameMode = 'AI';
         this.aiDifficulty = 'HARD';
         this.playerColor = 'W';
         this.peer = null;
         this.conn = null;
         this.isHost = false;
+
+        this.lastMove = null; // { from: [r, c], to: [r, c] }
+        this.capturedPieces = { W: [], B: [] }; // W가 잡은 흑 기물들, B가 잡은 백 기물들
 
         this.initWorker();
         this.reset();
@@ -196,6 +231,9 @@
         this.validMoves = [];
         this.isGameOver = false;
         this.pendingPromotion = null;
+        this.lastMove = null;
+        this.capturedPieces = { W: [], B: [] };
+
         this.logElement.innerHTML = '';
         this.log("게임 초기화 완료.");
         this.toggleRuleModal(false);
@@ -337,7 +375,6 @@
             const movedPiece = this.board.grid[sr][sc].clone();
             this.executeMove(this.board, sr, sc, r, c, move, true, true);
 
-            // 유저의 수를 AI에게 전달 (추리용)
             if (this.gameMode === 'AI' && !this.isGameOver) {
               this.triggerAIAction({
                 sr, sc, er: r, ec: c, movedPiece, boardBefore: bBefore.serializeForAI((this.playerColor === 'W') ? 'B' : 'W')
@@ -370,7 +407,10 @@
         piece.disguiseType = 'K';
         piece.isFakeKing = true;
 
-        this.log(`${color === 'W' ? '백' : '흑'} 1턴: 킹과 기물 교환 완료.`);
+        // 최근 교환 위치 하이라이트 기록
+        this.lastMove = { from: [kingRow, 4], to: [r, c] };
+
+        this.log(`${color === 'W' ? '백' : '흑'} 1턴: 킹과 [${NAMES[piece.realType]}] 교환 완료.`);
         if (isLocal) this.sendNet({ type: 'SWAP', r, c, color });
 
         if (this.phase === 'SWAP_WHITE') {
@@ -401,6 +441,11 @@
           if (isReal) this.log(`${this.turn === 'W' ? '백' : '흑'} 앙파상 포획!`);
         }
 
+        // 포획된 기물 수집
+        if (isReal && capturedPiece) {
+          this.capturedPieces[movingPiece.color].push(capturedPiece);
+        }
+
         if (capturedPiece && capturedPiece.isFakeKing) {
           const realKing = board.findRealKingPiece(capturedPiece.color);
           if (realKing) {
@@ -423,6 +468,11 @@
           board.enPassantTarget = { r: (sr + er) / 2, c: sc, pawnR: er, pawnC: ec };
         } else {
           board.enPassantTarget = null;
+        }
+
+        if (isReal) {
+          // 최근 이동 위치 하이라이트 기록
+          this.lastMove = { from: [sr, sc], to: [er, ec] };
         }
 
         if (movingPiece.realType === 'P' && (er === 0 || er === 7)) {
@@ -473,7 +523,6 @@
         const [r, c] = this.selectedPos;
         this.transformPiece(r, c, newDisguise, true);
 
-        // 유저의 3번 룰 변신 이벤트를 AI 추리 엔진에 전달
         if (this.gameMode === 'AI' && !this.isGameOver) {
           this.triggerAIAction(null, { r, c, newDisguise });
         }
@@ -485,6 +534,7 @@
 
         piece.disguiseType = newDisguise;
         this.board.enPassantTarget = null;
+        this.lastMove = { from: [r, c], to: [r, c] };
         this.log(`${this.turn === 'W' ? '백' : '흑'} 기물이 [${NAMES[newDisguise]}] 모습으로 변신했습니다.`);
 
         if (isLocal) this.sendNet({ type: 'TRANSFORM', r, c, newDisguise });
@@ -556,6 +606,9 @@
           }
         }
 
+        // 포획 기물 트레이 및 점수 우위 렌더링
+        this.updateMaterialUI();
+
         const transButtons = ['Q', 'R', 'B', 'N'].map(t => document.getElementById(`btn-trans-${t}`));
         let canTransform = false;
         if (this.phase === 'PLAY' && !this.isGameOver && !this.pendingPromotion && this.selectedPos) {
@@ -566,6 +619,67 @@
           }
         }
         transButtons.forEach(btn => btn.disabled = !canTransform);
+      }
+
+      updateMaterialUI() {
+        const flip = (this.playerColor === 'B');
+
+        // 점수 계산 (각 진영이 잡은 기물의 총합)
+        const whiteScore = this.capturedPieces.W.reduce((sum, p) => sum + (MATERIAL_POINTS[p.realType] || 0), 0);
+        const blackScore = this.capturedPieces.B.reduce((sum, p) => sum + (MATERIAL_POINTS[p.realType] || 0), 0);
+        const diff = whiteScore - blackScore;
+
+        const renderTray = (trayEl, list) => {
+          trayEl.innerHTML = '';
+          // 기물 가치 순으로 정렬 (P -> N/B -> R -> Q)
+          const sorted = [...list].sort((a, b) => (MATERIAL_POINTS[a.realType] || 0) - (MATERIAL_POINTS[b.realType] || 0));
+          sorted.forEach(p => {
+            const span = document.createElement('span');
+            span.className = `piece-${p.color}`;
+            span.textContent = p.symbol;
+            trayEl.appendChild(span);
+          });
+        };
+
+        if (!flip) {
+          // 기본 뷰: 상단=흑, 하단=백
+          this.topPlayerName.textContent = (this.gameMode === 'AI') ? 'AI (흑)' : '상대 (흑)';
+          this.bottomPlayerName.textContent = '나 (백)';
+          renderTray(this.topCapturedTray, this.capturedPieces.B);
+          renderTray(this.bottomCapturedTray, this.capturedPieces.W);
+
+          if (diff > 0) {
+            this.bottomPlayerLead.textContent = `+${diff}`;
+            this.bottomPlayerLead.style.display = 'inline-block';
+            this.topPlayerLead.style.display = 'none';
+          } else if (diff < 0) {
+            this.topPlayerLead.textContent = `+${Math.abs(diff)}`;
+            this.topPlayerLead.style.display = 'inline-block';
+            this.bottomPlayerLead.style.display = 'none';
+          } else {
+            this.topPlayerLead.style.display = 'none';
+            this.bottomPlayerLead.style.display = 'none';
+          }
+        } else {
+          // 반전 뷰: 상단=백, 하단=흑
+          this.topPlayerName.textContent = (this.gameMode === 'AI') ? 'AI (백)' : '상대 (백)';
+          this.bottomPlayerName.textContent = '나 (흑)';
+          renderTray(this.topCapturedTray, this.capturedPieces.W);
+          renderTray(this.bottomCapturedTray, this.capturedPieces.B);
+
+          if (diff < 0) {
+            this.bottomPlayerLead.textContent = `+${Math.abs(diff)}`;
+            this.bottomPlayerLead.style.display = 'inline-block';
+            this.topPlayerLead.style.display = 'none';
+          } else if (diff > 0) {
+            this.topPlayerLead.textContent = `+${diff}`;
+            this.topPlayerLead.style.display = 'inline-block';
+            this.bottomPlayerLead.style.display = 'none';
+          } else {
+            this.topPlayerLead.style.display = 'none';
+            this.bottomPlayerLead.style.display = 'none';
+          }
+        }
       }
 
       render() {
@@ -583,6 +697,15 @@
             cell.className = `cell ${isLight ? 'light' : 'dark'}`;
 
             const piece = this.board.grid[r][c];
+
+            // 최근 이동/교환 위치 하이라이트
+            if (this.lastMove) {
+              const [fr, fc] = this.lastMove.from;
+              const [tr, tc] = this.lastMove.to;
+              if ((r === fr && c === fc) || (r === tr && c === tc)) {
+                cell.classList.add('last-move');
+              }
+            }
 
             if (this.phase === 'SWAP_WHITE' && piece && piece.color === 'W' && piece.realType !== 'P' && !(r === 7 && c === 4)) {
               cell.classList.add('swap-candidate');

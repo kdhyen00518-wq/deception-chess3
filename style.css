@@ -2,6 +2,8 @@
   --light-square: #eeeed2;
   --dark-square: #769656;
   --selected-square: #f7f769;
+  --last-move-light: #cedb6e;
+  --last-move-dark: #aaa23a;
   --take-empty: #22c55e;
   --take-capture: #ef4444;
   --disguise-move: #38bdf8;
@@ -44,7 +46,7 @@ h1 { font-size: 1.7rem; letter-spacing: -0.5px; }
 }
 
 #status {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   font-size: 1.05rem;
   font-weight: bold;
   min-height: 1.5em;
@@ -66,6 +68,53 @@ h1 { font-size: 1.7rem; letter-spacing: -0.5px; }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
 
 .main-layout { display: flex; gap: 20px; align-items: flex-start; }
+
+/* 체스판 및 플레이어 바 영역 */
+.game-area {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.player-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #242433;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #38384d;
+  min-height: 38px;
+}
+
+.player-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: bold;
+}
+
+.material-lead {
+  font-size: 0.8rem;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.captured-tray {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 1.25rem;
+  min-height: 24px;
+}
+
+.captured-tray span {
+  display: inline-block;
+  line-height: 1;
+}
 
 .board-container {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
@@ -93,6 +142,11 @@ h1 { font-size: 1.7rem; letter-spacing: -0.5px; }
 
 .cell.light { background-color: var(--light-square); }
 .cell.dark { background-color: var(--dark-square); }
+
+/* 최근 이동/교환 하이라이트 */
+.cell.light.last-move { background-color: var(--last-move-light) !important; }
+.cell.dark.last-move { background-color: var(--last-move-dark) !important; }
+
 .cell.selected { background-color: var(--selected-square) !important; }
 
 .cell.swap-candidate {

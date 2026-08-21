@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Deception Chess Mastermind</title>
-  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="style.css?v=3">
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script src="engine.js"></script>
 </head>
@@ -149,7 +149,6 @@
   </div>
 
   <script>
-    // 점수 계산용 기물 가치 (표준 체스 점수)
     const MATERIAL_POINTS = { 'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 0 };
 
     class WebChessController {
@@ -175,8 +174,8 @@
         this.conn = null;
         this.isHost = false;
 
-        this.lastMove = null; // { from: [r, c], to: [r, c] }
-        this.capturedPieces = { W: [], B: [] }; // W가 잡은 흑 기물들, B가 잡은 백 기물들
+        this.lastMove = null;
+        this.capturedPieces = { W: [], B: [] };
 
         this.initWorker();
         this.reset();
@@ -407,8 +406,7 @@
         piece.disguiseType = 'K';
         piece.isFakeKing = true;
 
-
-        this.log(`${color === 'W' ? '백' : '흑'} 1턴: 킹과 기물 교환 완료.`);
+        this.log(`${color === 'W' ? '백' : '흑'} 1턴: 킹과 [${NAMES[piece.realType]}] 교환 완료.`);
         if (isLocal) this.sendNet({ type: 'SWAP', r, c, color });
 
         if (this.phase === 'SWAP_WHITE') {
@@ -439,11 +437,27 @@
           if (isReal) this.log(`${this.turn === 'W' ? '백' : '흑'} 앙파상 포획!`);
         }
 
-        // 포획된 기물 수집
         if (isReal && capturedPiece) {
           this.capturedPieces[movingPiece.color].push(capturedPiece);
         }
 
+        // 진짜 킹이 포획된 경우 -> 즉시 게임 종료
+        if (capturedPiece && capturedPiece.realType === 'K') {
+          board.grid[er][ec] = movingPiece;
+          board.grid[sr][sc] = null;
+          if (isReal) {
+            this.lastMove = { from: [sr, sc], to: [er, ec] };
+            if (isLocal) this.sendNet({ type: 'MOVE', sr, sc, er, ec, moveObj: move });
+            this.isGameOver = true;
+            const winner = movingPiece.color === 'W' ? '백(White)' : '흑(Black)';
+            const loser = capturedPiece.color === 'W' ? '백(White)' : '흑(Black)';
+            this.log(`👑 ${loser}의 진짜 킹이 전사했습니다! ${winner} 승리!`);
+            this.render();
+          }
+          return;
+        }
+
+        // 가짜 킹이 포획된 경우
         if (capturedPiece && capturedPiece.isFakeKing) {
           const realKing = board.findRealKingPiece(capturedPiece.color);
           if (realKing) {
@@ -452,6 +466,7 @@
           }
         }
 
+        // 가짜 킹이 적을 잡은 경우
         if (movingPiece.isFakeKing && capturedPiece) {
           movingPiece.disguiseType = movingPiece.realType;
           const realKing = board.findRealKingPiece(movingPiece.color);
@@ -469,7 +484,6 @@
         }
 
         if (isReal) {
-          // 최근 이동 위치 하이라이트 기록
           this.lastMove = { from: [sr, sc], to: [er, ec] };
         }
 
@@ -545,15 +559,26 @@
         this.turn = this.turn === 'W' ? 'B' : 'W';
 
         const nextColor = this.turn;
+        const kingPos = this.board.findRealKing(nextColor);
+
+        if (!kingPos) {
+          this.isGameOver = true;
+          const winner = nextColor === 'W' ? '흑(Black)' : '백(White)';
+          this.log(`게임 종료! ${winner} 승리!`);
+          this.render();
+          return;
+        }
+
         const isCheck = this.board.isCheck(nextColor);
         const hasMoves = this.hasAnyLegalMoves(nextColor);
 
         if (!hasMoves) {
           this.isGameOver = true;
           if (isCheck) {
-            this.log(`체크메이트! ${nextColor === 'W' ? '흑(Black)' : '백(White)'} 승리!`);
+            const winner = nextColor === 'W' ? '흑(Black)' : '백(White)';
+            this.log(`체크메이트! ${winner}의 승리입니다!`);
           } else {
-            this.log(`스테일메이트! 무승부입니다.`);
+            this.log(`스테일메이트! 합법수가 없어 무승부입니다.`);
           }
         } else if (isCheck) {
           this.log(`${nextColor === 'W' ? '백' : '흑'} 체크!`);
@@ -604,7 +629,6 @@
           }
         }
 
-        // 포획 기물 트레이 및 점수 우위 렌더링
         this.updateMaterialUI();
 
         const transButtons = ['Q', 'R', 'B', 'N'].map(t => document.getElementById(`btn-trans-${t}`));
@@ -622,14 +646,12 @@
       updateMaterialUI() {
         const flip = (this.playerColor === 'B');
 
-        // 점수 계산 (각 진영이 잡은 기물의 총합)
         const whiteScore = this.capturedPieces.W.reduce((sum, p) => sum + (MATERIAL_POINTS[p.realType] || 0), 0);
         const blackScore = this.capturedPieces.B.reduce((sum, p) => sum + (MATERIAL_POINTS[p.realType] || 0), 0);
         const diff = whiteScore - blackScore;
 
         const renderTray = (trayEl, list) => {
           trayEl.innerHTML = '';
-          // 기물 가치 순으로 정렬 (P -> N/B -> R -> Q)
           const sorted = [...list].sort((a, b) => (MATERIAL_POINTS[a.realType] || 0) - (MATERIAL_POINTS[b.realType] || 0));
           sorted.forEach(p => {
             const span = document.createElement('span');
@@ -640,7 +662,6 @@
         };
 
         if (!flip) {
-          // 기본 뷰: 상단=흑, 하단=백
           this.topPlayerName.textContent = (this.gameMode === 'AI') ? 'AI (흑)' : '상대 (흑)';
           this.bottomPlayerName.textContent = '나 (백)';
           renderTray(this.topCapturedTray, this.capturedPieces.B);
@@ -659,7 +680,6 @@
             this.bottomPlayerLead.style.display = 'none';
           }
         } else {
-          // 반전 뷰: 상단=백, 하단=흑
           this.topPlayerName.textContent = (this.gameMode === 'AI') ? 'AI (백)' : '상대 (백)';
           this.bottomPlayerName.textContent = '나 (흑)';
           renderTray(this.topCapturedTray, this.capturedPieces.W);
@@ -696,7 +716,6 @@
 
             const piece = this.board.grid[r][c];
 
-            // 최근 이동/교환 위치 하이라이트
             if (this.lastMove) {
               const [fr, fc] = this.lastMove.from;
               const [tr, tc] = this.lastMove.to;

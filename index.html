@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deception Chess Mastermind</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="engine.js"></script>
+</head>
+<body>
+
+  <div class="header-container">
+    <h1>기만 체스 (Deception Chess)</h1>
+    <button class="btn-rule-help" onclick="game.toggleRuleModal(true)">📖 룰 설명</button>
+  </div>
+  <div id="game-phase-badge">1턴: 킹 위치 교환 단계</div>
+  <div id="status">백(White) 1턴: 킹과 위치를 바꿀 기물(폰 제외)을 선택하세요.</div>
+
+  <div class="legend-container">
+    <div class="legend-item">
+      <div class="legend-dot" style="background-color: var(--take-empty)"></div>
+      <span>정규 이동</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background-color: var(--take-capture)"></div>
+      <span>정규 포획</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background-color: var(--disguise-move)"></div>
+      <span>위장 이동</span>
+    </div>
+  </div>
+
+  <div class="main-layout">
+    <div class="board-container">
+      <div id="board" class="board"></div>
+    </div>
+
+    <div class="side-panel">
+      <div class="panel-box">
+        <div class="panel-title">게임 모드</div>
+        <div class="btn-group">
+          <button id="btn-mode-ai" class="btn-opt active" onclick="game.setMode('AI')">지능형 봇 (PvE)</button>
+          <button id="btn-mode-p2p" class="btn-opt" onclick="game.setMode('P2P')">온라인 1:1</button>
+          <button id="btn-mode-local" class="btn-opt" onclick="game.setMode('LOCAL')">로컬 2인</button>
+        </div>
+
+        <div id="ai-options">
+          <div class="panel-title" style="margin-top: 6px;">AI 난이도</div>
+          <div class="btn-group">
+            <button id="btn-diff-easy" class="btn-opt" onclick="game.setDifficulty('EASY')">쉬움</button>
+            <button id="btn-diff-normal" class="btn-opt" onclick="game.setDifficulty('NORMAL')">보통</button>
+            <button id="btn-diff-hard" class="btn-opt active" onclick="game.setDifficulty('HARD')">고급(마스터)</button>
+          </div>
+
+          <div class="panel-title" style="margin-top: 6px;">진영 선택</div>
+          <div class="btn-group">
+            <button id="btn-color-w" class="btn-opt active" onclick="game.setPlayerColor('W')">백 (선공)</button>
+            <button id="btn-color-b" class="btn-opt" onclick="game.setPlayerColor('B')">흑 (후공)</button>
+          </div>
+        </div>
+
+        <div id="p2p-options" style="display: none;">
+          <div class="online-inputs">
+            <button onclick="game.createOnlineRoom()">방 생성 (방장)</button>
+            <div id="room-code-display" style="font-size: 0.8rem; color: #818cf8; text-align: center;"></div>
+            <input type="text" id="join-room-input" placeholder="6자리 방 코드 입력">
+            <button onclick="game.joinOnlineRoom()" style="background-color: #059669;">입장하기</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-box">
+        <div class="panel-title">3번 룰: 외형 변경 (1턴 소모)</div>
+        <div class="transform-buttons">
+          <button id="btn-trans-Q" disabled onclick="game.transformSelected('Q')">♛ 퀸</button>
+          <button id="btn-trans-R" disabled onclick="game.transformSelected('R')">♜ 룩</button>
+          <button id="btn-trans-B" disabled onclick="game.transformSelected('B')">♝ 비숍</button>
+          <button id="btn-trans-N" disabled onclick="game.transformSelected('N')">♞ 나이트</button>
+        </div>
+      </div>
+
+      <div class="panel-box">
+        <div class="panel-title">대국 기록</div>
+        <div id="log" class="log-box"></div>
+        <button class="btn-reset" style="width: 100%; margin-top: 8px;" onclick="game.reset()">게임 다시 시작</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="rule-modal" class="modal-overlay">
+    <div class="modal-content">
+      <h2>🎭 기만 체스 공식 규칙</h2>
+      <div class="rule-section">
+        <div class="rule-title">1. 첫 턴 필수 위장 (1번 룰)</div>
+        <p>1턴에 킹과 다른 기물(폰 제외) 하나의 <strong>위치와 외형을 맞바꿉니다.</strong> 겉으로는 정상 배치처럼 보이지만 실제 킹은 다른 자리에 숨어 있습니다.</p>
+      </div>
+      <div class="rule-section">
+        <div class="rule-title">2. 이중 행마법 (2번 룰)</div>
+        <p>• <strong>진짜 정체(Take Move)</strong>: 원래 기물의 행마로 이동 및 적 기물 포획 가능.<br>
+        • <strong>위장 외형(Move Only)</strong>: 겉모습 기물의 행마로 <strong>빈 칸 이동만 가능</strong> (포획 불가).</p>
+      </div>
+      <div class="rule-section">
+        <div class="rule-title">3. 외형 변경 (3번 룰)</div>
+        <p>2턴 이후 이동 대신 <strong>원하는 기물의 겉모습으로 변신</strong>할 수 있습니다. (1턴 소모, 킹/폰 제외)</p>
+      </div>
+      <div class="rule-section">
+        <div class="rule-title">4. 영혼 결속 (4번 룰)</div>
+        <p>1턴에 킹과 모습을 바꾼 <strong>가짜 킹이 기물을 잡거나 상대에게 잡히면, 그 기물과 진짜 킹 둘 다 정체가 즉시 드러납니다.</strong><br>
+        정체가 드러난 진짜 킹은 외형이 ♚으로 강제 복원되며 위장 이동을 영구 상실합니다.</p>
+      </div>
+      <button style="width: 100%; margin-top: 8px;" onclick="game.toggleRuleModal(false)">닫기</button>
+    </div>
+  </div>
+
+  <div id="promotion-modal" class="modal-overlay">
+    <div class="modal-content" style="text-align: center; max-width: 340px;">
+      <h2>폰 승급 (Promotion)</h2>
+      <div class="promotion-grid">
+        <button class="btn-promo" onclick="game.completePromotion('Q')">♛<span>퀸</span></button>
+        <button class="btn-promo" onclick="game.completePromotion('R')">♜<span>룩</span></button>
+        <button class="btn-promo" onclick="game.completePromotion('B')">♝<span>비숍</span></button>
+        <button class="btn-promo" onclick="game.completePromotion('N')">♞<span>나이트</span></button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    class WebChessController {
+      constructor() {
+        this.boardElement = document.getElementById('board');
+        this.statusElement = document.getElementById('status');
+        this.badgeElement = document.getElementById('game-phase-badge');
+        this.logElement = document.getElementById('log');
+        this.ruleModal = document.getElementById('rule-modal');
+        this.promotionModal = document.getElementById('promotion-modal');
+
+        this.gameMode = 'AI';
+        this.aiDifficulty = 'HARD';
+        this.playerColor = 'W';
+        this.peer = null;
+        this.conn = null;
+        this.isHost = false;
+
+        this.initWorker();
+        this.reset();
+      }
+
+      initWorker() {
+        this.aiWorker = new Worker('aiWorker.js');
+        this.aiWorker.onmessage = (e) => {
+          const { action, swapPos, bestAction } = e.data;
+          if (action === 'SWAP_RESULT') {
+            const aiColor = (this.playerColor === 'W') ? 'B' : 'W';
+            this.executeSwap(swapPos.r, swapPos.c, aiColor, false);
+          } else if (action === 'ACTION_RESULT' && bestAction) {
+            if (bestAction.actionType === 'TRANSFORM') {
+              this.transformPiece(bestAction.r, bestAction.c, bestAction.newDisguise, false);
+            } else {
+              this.executeMove(this.board, bestAction.sr, bestAction.sc, bestAction.er, bestAction.ec, bestAction.moveObj, true, false);
+            }
+          }
+        };
+      }
+
+      setMode(mode) {
+        this.gameMode = mode;
+        document.getElementById('btn-mode-ai').classList.toggle('active', mode === 'AI');
+        document.getElementById('btn-mode-p2p').classList.toggle('active', mode === 'P2P');
+        document.getElementById('btn-mode-local').classList.toggle('active', mode === 'LOCAL');
+        document.getElementById('ai-options').style.display = (mode === 'AI') ? 'block' : 'none';
+        document.getElementById('p2p-options').style.display = (mode === 'P2P') ? 'block' : 'none';
+        this.reset();
+      }
+
+      setDifficulty(diff) {
+        this.aiDifficulty = diff;
+        document.getElementById('btn-diff-easy').classList.toggle('active', diff === 'EASY');
+        document.getElementById('btn-diff-normal').classList.toggle('active', diff === 'NORMAL');
+        document.getElementById('btn-diff-hard').classList.toggle('active', diff === 'HARD');
+      }
+
+      setPlayerColor(col) {
+        this.playerColor = col;
+        document.getElementById('btn-color-w').classList.toggle('active', col === 'W');
+        document.getElementById('btn-color-b').classList.toggle('active', col === 'B');
+        this.reset();
+      }
+
+      reset() {
+        this.board = new Board();
+        this.phase = 'SWAP_WHITE';
+        this.turn = 'W';
+        this.selectedPos = null;
+        this.validMoves = [];
+        this.isGameOver = false;
+        this.pendingPromotion = null;
+        this.logElement.innerHTML = '';
+        this.log("게임 초기화 완료.");
+        this.toggleRuleModal(false);
+        this.togglePromotionModal(false);
+        this.render();
+
+        if (this.gameMode === 'AI' && this.playerColor === 'B') {
+          this.triggerAISwap();
+        }
+      }
+
+      toggleRuleModal(show) { this.ruleModal.classList.toggle('active', show); }
+      togglePromotionModal(show) { this.promotionModal.classList.toggle('active', show); }
+
+      log(msg) {
+        const p = document.createElement('div');
+        p.textContent = msg;
+        this.logElement.appendChild(p);
+        this.logElement.scrollTop = this.logElement.scrollHeight;
+      }
+
+      initPeer() {
+        if (!this.peer) {
+          const randomId = 'dc-' + Math.random().toString(36).substring(2, 8);
+          this.peer = new Peer(randomId);
+          this.peer.on('connection', (c) => {
+            this.conn = c;
+            this.setupConnectionHandlers();
+            this.log("상대방 접속 완료!");
+          });
+        }
+      }
+
+      createOnlineRoom() {
+        this.initPeer();
+        this.isHost = true;
+        this.playerColor = 'W';
+        this.peer.on('open', (id) => {
+          const code = id.replace('dc-', '');
+          document.getElementById('room-code-display').textContent = `내 방 코드: [ ${code} ]`;
+          this.log(`방 코드 [ ${code} ] 생성 완료.`);
+        });
+      }
+
+      joinOnlineRoom() {
+        const codeInput = document.getElementById('join-room-input').value.trim();
+        if (!codeInput) { alert("방 코드를 입력하세요."); return; }
+        this.initPeer();
+        this.isHost = false;
+        this.playerColor = 'B';
+        this.conn = this.peer.connect('dc-' + codeInput);
+        this.setupConnectionHandlers();
+      }
+
+      setupConnectionHandlers() {
+        this.conn.on('open', () => {
+          this.log("P2P 통신 연결 성공!");
+          this.reset();
+        });
+        this.conn.on('data', (data) => {
+          if (data.type === 'SWAP') this.executeSwap(data.r, data.c, data.color, false);
+          else if (data.type === 'MOVE') this.executeMove(this.board, data.sr, data.sc, data.er, data.ec, data.moveObj, true, false);
+          else if (data.type === 'PROMOTION') this.completePromotion(data.chosenType, false);
+          else if (data.type === 'TRANSFORM') this.transformPiece(data.r, data.c, data.newDisguise, false);
+        });
+      }
+
+      sendNet(data) {
+        if (this.gameMode === 'P2P' && this.conn && this.conn.open) {
+          this.conn.send(data);
+        }
+      }
+
+      getAllMoves(r, c) {
+        const piece = this.board.grid[r][c];
+        if (!piece) return [];
+
+        const combinedMoves = [];
+        const seen = new Set();
+
+        const takeMoves = MoveEngine.getPatternMoves(piece.realType, this.board, r, c, true);
+        for (const m of takeMoves) {
+          seen.add(`${m.r},${m.c}`);
+          combinedMoves.push({ r: m.r, c: m.c, type: m.isCapture ? 'take-capture' : 'take-empty', isEnPassant: m.isEnPassant });
+        }
+
+        if (piece.disguiseType !== piece.realType) {
+          const disguiseMoves = MoveEngine.getPatternMoves(piece.disguiseType, this.board, r, c, false);
+          for (const m of disguiseMoves) {
+            if (!seen.has(`${m.r},${m.c}`) && this.board.isEmpty(m.r, m.c)) {
+              seen.add(`${m.r},${m.c}`);
+              combinedMoves.push({ r: m.r, c: m.c, type: 'disguise-empty', isEnPassant: false });
+            }
+          }
+        }
+
+        return combinedMoves.filter(m => {
+          const simBoard = this.board.clone();
+          simBoard.grid[m.r][m.c] = simBoard.grid[r][c];
+          simBoard.grid[r][c] = null;
+          if (m.isEnPassant) simBoard.grid[r][m.c] = null;
+          return !simBoard.isCheck(piece.color);
+        });
+      }
+
+      hasAnyLegalMoves(color) {
+        for (let r = 0; r < 8; r++) {
+          for (let c = 0; c < 8; c++) {
+            const p = this.board.grid[r][c];
+            if (p && p.color === color && this.getAllMoves(r, c).length > 0) return true;
+          }
+        }
+        return false;
+      }
+
+      handleCellClick(r, c) {
+        if (this.isGameOver || this.pendingPromotion) return;
+        if (this.gameMode === 'AI' && this.turn !== this.playerColor) return;
+        if (this.gameMode === 'P2P' && this.turn !== this.playerColor) return;
+
+        if (this.phase === 'SWAP_WHITE' || this.phase === 'SWAP_BLACK') {
+          const targetColor = this.phase === 'SWAP_WHITE' ? 'W' : 'B';
+          const kingRow = targetColor === 'W' ? 7 : 0;
+          const piece = this.board.grid[r][c];
+
+          if (piece && piece.color === targetColor && piece.realType !== 'P' && !(r === kingRow && c === 4)) {
+            this.executeSwap(r, c, targetColor, true);
+          }
+          return;
+        }
+
+        const clickedPiece = this.board.grid[r][c];
+
+        if (this.selectedPos) {
+          const [sr, sc] = this.selectedPos;
+          const move = this.validMoves.find(m => m.r === r && m.c === c);
+          if (move) {
+            const bBefore = this.board.clone();
+            const movedPiece = this.board.grid[sr][sc].clone();
+            this.executeMove(this.board, sr, sc, r, c, move, true, true);
+
+            // 유저의 수를 AI에게 전달 (추리용)
+            if (this.gameMode === 'AI' && !this.isGameOver) {
+              this.triggerAIAction({
+                sr, sc, er: r, ec: c, movedPiece, boardBefore: bBefore.serializeForAI((this.playerColor === 'W') ? 'B' : 'W')
+              });
+            }
+            return;
+          }
+        }
+
+        if (clickedPiece && clickedPiece.color === this.turn) {
+          this.selectedPos = [r, c];
+          this.validMoves = this.getAllMoves(r, c);
+        } else {
+          this.selectedPos = null;
+          this.validMoves = [];
+        }
+
+        this.render();
+      }
+
+      executeSwap(r, c, color, isLocal = true) {
+        const kingRow = color === 'W' ? 7 : 0;
+        const piece = this.board.grid[r][c];
+        const kingPiece = this.board.grid[kingRow][4];
+
+        this.board.grid[r][c] = kingPiece;
+        this.board.grid[kingRow][4] = piece;
+
+        kingPiece.disguiseType = piece.realType;
+        piece.disguiseType = 'K';
+        piece.isFakeKing = true;
+
+        this.log(`${color === 'W' ? '백' : '흑'} 1턴: 킹과 기물 교환 완료.`);
+        if (isLocal) this.sendNet({ type: 'SWAP', r, c, color });
+
+        if (this.phase === 'SWAP_WHITE') {
+          this.phase = 'SWAP_BLACK';
+          this.turn = 'B';
+          this.render();
+          if (this.gameMode === 'AI' && this.playerColor === 'W') {
+            this.triggerAISwap();
+          }
+        } else {
+          this.phase = 'PLAY';
+          this.turn = 'W';
+          this.log("본 대국 시작!");
+          this.render();
+          if (this.gameMode === 'AI' && this.playerColor === 'B') {
+            this.triggerAIAction();
+          }
+        }
+      }
+
+      executeMove(board, sr, sc, er, ec, move, isReal = false, isLocal = true) {
+        const movingPiece = board.grid[sr][sc];
+        let capturedPiece = board.grid[er][ec];
+
+        if (move.isEnPassant) {
+          capturedPiece = board.grid[sr][ec];
+          board.grid[sr][ec] = null;
+          if (isReal) this.log(`${this.turn === 'W' ? '백' : '흑'} 앙파상 포획!`);
+        }
+
+        if (capturedPiece && capturedPiece.isFakeKing) {
+          const realKing = board.findRealKingPiece(capturedPiece.color);
+          if (realKing) {
+            realKing.disguiseType = 'K';
+            if (isReal) this.log(`💥 ${capturedPiece.color === 'W' ? '백' : '흑'} 가짜 킹 사망! 진짜 킹의 정체가 탄로 났습니다.`);
+          }
+        }
+
+        if (movingPiece.isFakeKing && capturedPiece) {
+          movingPiece.disguiseType = movingPiece.realType;
+          const realKing = board.findRealKingPiece(movingPiece.color);
+          if (realKing) realKing.disguiseType = 'K';
+          if (isReal) this.log(`💥 ${movingPiece.color === 'W' ? '백' : '흑'} 가짜 킹이 적을 잡아 정체가 드러났습니다!`);
+        }
+
+        board.grid[er][ec] = movingPiece;
+        board.grid[sr][sc] = null;
+
+        if (movingPiece.realType === 'P' && Math.abs(er - sr) === 2) {
+          board.enPassantTarget = { r: (sr + er) / 2, c: sc, pawnR: er, pawnC: ec };
+        } else {
+          board.enPassantTarget = null;
+        }
+
+        if (movingPiece.realType === 'P' && (er === 0 || er === 7)) {
+          if (isReal) {
+            if (this.gameMode === 'AI' && this.turn !== this.playerColor) {
+              this.completePromotion('Q', isLocal);
+              return;
+            } else if (!isLocal) {
+              return;
+            } else {
+              this.pendingPromotion = { r: er, c: ec };
+              this.togglePromotionModal(true);
+              this.render();
+              return;
+            }
+          }
+        }
+
+        if (isReal) {
+          if (isLocal) this.sendNet({ type: 'MOVE', sr, sc, er, ec, moveObj: move });
+          this.log(`${this.turn === 'W' ? '백' : '흑'} 이동 완료.`);
+          this.endTurn();
+        }
+      }
+
+      completePromotion(chosenType, isLocal = true) {
+        const targetPos = this.pendingPromotion ? { r: this.pendingPromotion.r, c: this.pendingPromotion.c } : 
+                         (this.turn === 'W' ? { r: 0, c: this.board.grid[0].findIndex(p => p && p.realType === 'P') } :
+                                              { r: 7, c: this.board.grid[7].findIndex(p => p && p.realType === 'P') });
+
+        if (targetPos && targetPos.c !== -1) {
+          const piece = this.board.grid[targetPos.r][targetPos.c];
+          if (piece) {
+            piece.realType = chosenType;
+            piece.disguiseType = chosenType;
+            this.log(`${this.turn === 'W' ? '백' : '흑'} 폰이 [${NAMES[chosenType]}]으로 승급했습니다.`);
+          }
+        }
+
+        if (isLocal) this.sendNet({ type: 'PROMOTION', chosenType });
+        this.pendingPromotion = null;
+        this.togglePromotionModal(false);
+        this.endTurn();
+      }
+
+      transformSelected(newDisguise) {
+        if (!this.selectedPos || this.phase !== 'PLAY' || this.isGameOver || this.pendingPromotion) return;
+        const [r, c] = this.selectedPos;
+        this.transformPiece(r, c, newDisguise, true);
+
+        // 유저의 3번 룰 변신 이벤트를 AI 추리 엔진에 전달
+        if (this.gameMode === 'AI' && !this.isGameOver) {
+          this.triggerAIAction(null, { r, c, newDisguise });
+        }
+      }
+
+      transformPiece(r, c, newDisguise, isLocal = true) {
+        const piece = this.board.grid[r][c];
+        if (!piece || piece.realType === 'K' || piece.realType === 'P') return;
+
+        piece.disguiseType = newDisguise;
+        this.board.enPassantTarget = null;
+        this.log(`${this.turn === 'W' ? '백' : '흑'} 기물이 [${NAMES[newDisguise]}] 모습으로 변신했습니다.`);
+
+        if (isLocal) this.sendNet({ type: 'TRANSFORM', r, c, newDisguise });
+        this.endTurn();
+      }
+
+      endTurn() {
+        this.selectedPos = null;
+        this.validMoves = [];
+        this.turn = this.turn === 'W' ? 'B' : 'W';
+
+        const nextColor = this.turn;
+        const isCheck = this.board.isCheck(nextColor);
+        const hasMoves = this.hasAnyLegalMoves(nextColor);
+
+        if (!hasMoves) {
+          this.isGameOver = true;
+          if (isCheck) {
+            this.log(`체크메이트! ${nextColor === 'W' ? '흑(Black)' : '백(White)'} 승리!`);
+          } else {
+            this.log(`스테일메이트! 무승부입니다.`);
+          }
+        } else if (isCheck) {
+          this.log(`${nextColor === 'W' ? '백' : '흑'} 체크!`);
+        }
+
+        this.render();
+      }
+
+      triggerAISwap() {
+        const aiColor = (this.playerColor === 'W') ? 'B' : 'W';
+        this.aiWorker.postMessage({
+          action: 'SWAP',
+          boardData: this.board.serializeForAI(aiColor),
+          aiColor: aiColor,
+          difficulty: this.aiDifficulty
+        });
+      }
+
+      triggerAIAction(lastMoveData = null, transformData = null) {
+        const aiColor = (this.playerColor === 'W') ? 'B' : 'W';
+        this.aiWorker.postMessage({
+          action: 'ACTION',
+          boardData: this.board.serializeForAI(aiColor),
+          aiColor: aiColor,
+          difficulty: this.aiDifficulty,
+          lastOpponentMove: lastMoveData,
+          transformEvent: transformData
+        });
+      }
+
+      updateUI() {
+        if (this.phase === 'SWAP_WHITE' || this.phase === 'SWAP_BLACK') {
+          const colorName = this.phase === 'SWAP_WHITE' ? '백(White)' : '흑(Black)';
+          this.badgeElement.textContent = `1턴: ${colorName} 킹 교환`;
+          this.statusElement.textContent = `${colorName} 1턴: 킹과 위치를 맞바꿀 기물(황색 테두리)을 선택하세요.`;
+        } else {
+          this.badgeElement.textContent = '본 대국 진행 중';
+          this.badgeElement.style.backgroundColor = '#059669';
+          if (this.isGameOver) {
+            this.statusElement.textContent = `게임 종료!`;
+          } else {
+            const checkTxt = this.board.isCheck(this.turn) ? ' [체크!]' : '';
+            if (this.gameMode === 'AI' && this.turn !== this.playerColor) {
+              this.statusElement.textContent = `심리전 AI가 최적의 수를 연산 중입니다...${checkTxt}`;
+            } else {
+              this.statusElement.textContent = `${this.turn === 'W' ? '백(White)' : '흑(Black)'}의 차례입니다.${checkTxt}`;
+            }
+          }
+        }
+
+        const transButtons = ['Q', 'R', 'B', 'N'].map(t => document.getElementById(`btn-trans-${t}`));
+        let canTransform = false;
+        if (this.phase === 'PLAY' && !this.isGameOver && !this.pendingPromotion && this.selectedPos) {
+          const [r, c] = this.selectedPos;
+          const piece = this.board.grid[r][c];
+          if (piece && piece.color === this.turn && piece.realType !== 'K' && piece.realType !== 'P') {
+            canTransform = true;
+          }
+        }
+        transButtons.forEach(btn => btn.disabled = !canTransform);
+      }
+
+      render() {
+        this.updateUI();
+        this.boardElement.innerHTML = '';
+        const flip = (this.playerColor === 'B');
+
+        for (let rowIdx = 0; rowIdx < 8; rowIdx++) {
+          for (let colIdx = 0; colIdx < 8; colIdx++) {
+            const r = flip ? (7 - rowIdx) : rowIdx;
+            const c = flip ? (7 - colIdx) : colIdx;
+
+            const cell = document.createElement('div');
+            const isLight = (r + c) % 2 === 0;
+            cell.className = `cell ${isLight ? 'light' : 'dark'}`;
+
+            const piece = this.board.grid[r][c];
+
+            if (this.phase === 'SWAP_WHITE' && piece && piece.color === 'W' && piece.realType !== 'P' && !(r === 7 && c === 4)) {
+              cell.classList.add('swap-candidate');
+            }
+            if (this.phase === 'SWAP_BLACK' && piece && piece.color === 'B' && piece.realType !== 'P' && !(r === 0 && c === 4)) {
+              cell.classList.add('swap-candidate');
+            }
+
+            if (this.selectedPos && this.selectedPos[0] === r && this.selectedPos[1] === c) {
+              cell.classList.add('selected');
+            }
+
+            const targetMove = this.validMoves.find(m => m.r === r && m.c === c);
+            if (targetMove) {
+              if (targetMove.type === 'take-empty') cell.classList.add('move-take-empty');
+              else if (targetMove.type === 'take-capture') cell.classList.add('move-take-capture');
+              else if (targetMove.type === 'disguise-empty') cell.classList.add('move-disguise-empty');
+            }
+
+            if (piece) {
+              const span = document.createElement('span');
+              span.className = `piece-${piece.color}`;
+              span.textContent = piece.symbol;
+              cell.appendChild(span);
+            }
+
+            cell.addEventListener('click', () => this.handleCellClick(r, c));
+            this.boardElement.appendChild(cell);
+          }
+        }
+      }
+    }
+
+    const game = new WebChessController();
+  </script>
+</body>
+</html>

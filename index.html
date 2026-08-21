@@ -407,8 +407,6 @@
         piece.disguiseType = 'K';
         piece.isFakeKing = true;
 
-        // 최근 교환 위치 하이라이트 기록
-        this.lastMove = { from: [kingRow, 4], to: [r, c] };
 
         this.log(`${color === 'W' ? '백' : '흑'} 1턴: 킹과 [${NAMES[piece.realType]}] 교환 완료.`);
         if (isLocal) this.sendNet({ type: 'SWAP', r, c, color });

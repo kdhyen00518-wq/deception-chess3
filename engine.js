@@ -189,12 +189,12 @@ class Board {
     return this.isSquareAttacked(kingPos[0], kingPos[1], enemyColor);
   }
 
-  // AI에게 불완전 정보만 넘겨주는 마스킹 직렬화 함수 (투시 방지)
+  // [수정] 오직 미공개 킹/가짜 킹만 은폐하고, 3번 룰 변신 기물의 본래 공격력(realType)은 정확히 전달
   serializeForAI(aiColor) {
     return {
       grid: this.grid.map(row => row.map(cell => {
         if (!cell) return null;
-        if (cell.color === aiColor || cell.disguiseType === cell.realType) {
+        if (cell.color === aiColor) {
           return {
             color: cell.color,
             realType: cell.realType,
@@ -202,10 +202,22 @@ class Board {
             isFakeKing: cell.isFakeKing
           };
         }
-        // 정체가 밝혀지지 않은 상대 기물은 겉모습을 진짜 정체인 것처럼 마스킹
+
+        // 상대방 기물: 1턴에 위장한 미공개 진짜 킹/가짜 킹만 정체를 숨김
+        let reportedRealType = cell.realType;
+
+        if (cell.realType === 'K' && cell.disguiseType !== 'K') {
+          // 아직 안 들킨 진짜 킹: 외형(disguiseType)으로 위장 전달
+          reportedRealType = cell.disguiseType;
+        } else if (cell.isFakeKing && cell.disguiseType === 'K') {
+          // 아직 안 들킨 가짜 킹: 킹(K)으로 위장 전달
+          reportedRealType = 'K';
+        }
+        // 일반 기물이 3번 룰로 변신한 경우: 겉모습은 바뀌어도 realType(퀸, 룩 등)은 그대로 보존되어 전달됨!
+
         return {
           color: cell.color,
-          realType: cell.disguiseType,
+          realType: reportedRealType,
           disguiseType: cell.disguiseType,
           isFakeKing: false
         };

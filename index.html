@@ -406,7 +406,7 @@
         piece.disguiseType = 'K';
         piece.isFakeKing = true;
 
-        this.log(`${color === 'W' ? '백' : '흑'} 1턴: 킹과 [${NAMES[piece.realType]}] 교환 완료.`);
+        this.log(`${color === 'W' ? '백' : '흑'} 1턴: 킹과 기물 교환 완료.`);
         if (isLocal) this.sendNet({ type: 'SWAP', r, c, color });
 
         if (this.phase === 'SWAP_WHITE') {

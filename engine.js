@@ -1,5 +1,5 @@
 /**
- * Deception Chess Game Engine Core
+ * Deception Chess Game Engine Core (engine.js)
  */
 const SYMBOLS = { 'K': '♚', 'Q': '♛', 'R': '♜', 'B': '♝', 'N': '♞', 'P': '♟' };
 const NAMES = { 'K': '킹', 'Q': '퀸', 'R': '룩', 'B': '비숍', 'N': '나이트', 'P': '폰' };
@@ -28,10 +28,10 @@ class MoveEngine {
       let nr = r + dr, nc = c + dc;
       while (board.inBounds(nr, nc)) {
         if (board.isEmpty(nr, nc)) {
-          moves.push({ r: nr, c: nc, isCapture: false, isEnPassant: false, moveType: 'slide' });
+          moves.push({ r: nr, c: nc, isCapture: false, isEnPassant: false });
         } else {
           if (allowCapture && board.isEnemy(nr, nc, piece.color)) {
-            moves.push({ r: nr, c: nc, isCapture: true, isEnPassant: false, moveType: 'slide' });
+            moves.push({ r: nr, c: nc, isCapture: true, isEnPassant: false });
           }
           break;
         }
@@ -48,9 +48,9 @@ class MoveEngine {
       const nr = r + dr, nc = c + dc;
       if (board.inBounds(nr, nc)) {
         if (board.isEmpty(nr, nc)) {
-          moves.push({ r: nr, c: nc, isCapture: false, isEnPassant: false, moveType: 'jump' });
+          moves.push({ r: nr, c: nc, isCapture: false, isEnPassant: false });
         } else if (allowCapture && board.isEnemy(nr, nc, piece.color)) {
-          moves.push({ r: nr, c: nc, isCapture: true, isEnPassant: false, moveType: 'jump' });
+          moves.push({ r: nr, c: nc, isCapture: true, isEnPassant: false });
         }
       }
     }
@@ -65,10 +65,10 @@ class MoveEngine {
 
     const fwdR = r + dir;
     if (board.isEmpty(fwdR, c)) {
-      moves.push({ r: fwdR, c: c, isCapture: false, isEnPassant: false, moveType: 'pawn' });
+      moves.push({ r: fwdR, c: c, isCapture: false, isEnPassant: false });
       const fwd2R = r + (dir * 2);
       if (r === startRow && board.isEmpty(fwd2R, c)) {
-        moves.push({ r: fwd2R, c: c, isCapture: false, isEnPassant: false, moveType: 'pawn' });
+        moves.push({ r: fwd2R, c: c, isCapture: false, isEnPassant: false });
       }
     }
 
@@ -77,9 +77,9 @@ class MoveEngine {
         const capC = c + dc;
         if (board.inBounds(fwdR, capC)) {
           if (board.isEnemy(fwdR, capC, piece.color)) {
-            moves.push({ r: fwdR, c: capC, isCapture: true, isEnPassant: false, moveType: 'pawn' });
+            moves.push({ r: fwdR, c: capC, isCapture: true, isEnPassant: false });
           } else if (board.enPassantTarget && board.enPassantTarget.r === fwdR && board.enPassantTarget.c === capC) {
-            moves.push({ r: fwdR, c: capC, isCapture: true, isEnPassant: true, moveType: 'pawn' });
+            moves.push({ r: fwdR, c: capC, isCapture: true, isEnPassant: true });
           }
         }
       }
@@ -189,7 +189,7 @@ class Board {
     return this.isSquareAttacked(kingPos[0], kingPos[1], enemyColor);
   }
 
-  // [수정] 오직 미공개 킹/가짜 킹만 은폐하고, 3번 룰 변신 기물의 본래 공격력(realType)은 정확히 전달
+  // 4 & 5. AI 정보 마스킹 직렬화 (진짜 킹/가짜 킹만 은폐, 룰 3 변신 기물의 본래 공격력은 보존)
   serializeForAI(aiColor) {
     return {
       grid: this.grid.map(row => row.map(cell => {
@@ -203,17 +203,14 @@ class Board {
           };
         }
 
-        // 상대방 기물: 1턴에 위장한 미공개 진짜 킹/가짜 킹만 정체를 숨김
         let reportedRealType = cell.realType;
 
+        // 미공개 진짜 킹 / 가짜 킹만 블러핑 처리
         if (cell.realType === 'K' && cell.disguiseType !== 'K') {
-          // 아직 안 들킨 진짜 킹: 외형(disguiseType)으로 위장 전달
           reportedRealType = cell.disguiseType;
         } else if (cell.isFakeKing && cell.disguiseType === 'K') {
-          // 아직 안 들킨 가짜 킹: 킹(K)으로 위장 전달
           reportedRealType = 'K';
         }
-        // 일반 기물이 3번 룰로 변신한 경우: 겉모습은 바뀌어도 realType(퀸, 룩 등)은 그대로 보존되어 전달됨!
 
         return {
           color: cell.color,

@@ -1,9 +1,5 @@
 /**
- * Deception Chess Mastermind AI Worker
- * Features:
- *  - Deduction Tracker (Hyper-move & Missed-capture profiling)
- *  - Tactical Rule-3 Transformation Generator (Escape / Infiltration)
- *  - Depth-4 Alpha-Beta Pruning with Quiescence Search
+ * Deception Chess Mastermind AI Worker (Patched)
  */
 importScripts('engine.js');
 
@@ -46,11 +42,10 @@ const PST = {
   ]
 };
 
-// 상대방 블러핑 추리 프로파일러
 class DeductionTracker {
   constructor(opponentColor) {
     this.opponentColor = opponentColor;
-    this.kingSuspicionMap = {}; // "r,c" -> 의심 점수
+    this.kingSuspicionMap = {};
     this.confirmedSwapType = null;
   }
 
@@ -58,7 +53,6 @@ class DeductionTracker {
     const dr = Math.abs(er - sr);
     const dc = Math.abs(ec - sc);
 
-    // 1. 가짜 킹의 초과 행마 감지
     if (movedPiece.disguiseType === 'K') {
       if ((dr === 1 && dc === 2) || (dr === 2 && dc === 1)) {
         this.confirmedSwapType = 'N';
@@ -69,7 +63,6 @@ class DeductionTracker {
       }
     }
 
-    // 2. 진짜 킹의 포획 불발 감지 (공짜 기물을 두고 빈칸으로 피신)
     if (movedPiece.disguiseType !== 'K' && movedPiece.disguiseType !== 'P') {
       const disguiseTakeMoves = MoveEngine.getPatternMoves(movedPiece.disguiseType, boardBefore, sr, sc, true);
       const lucrativeCaptures = disguiseTakeMoves.filter(m => {
@@ -81,15 +74,13 @@ class DeductionTracker {
       const captured = boardBefore.grid[er][ec];
       if (lucrativeCaptures.length > 0 && !captured) {
         const key = `${er},${ec}`;
-        this.kingSuspicionMap[key] = (this.kingSuspicionMap[key] || 0) + 45;
+        this.kingSuspicionMap[key] = (this.kingSuspicionMap[key] || 0) + 50;
       }
     }
   }
 
-  // 3번 룰 변신 시 상대 기물 상태 갱신
   trackTransformation(r, c, newDisguise) {
     const key = `${r},${c}`;
-    // 3번 룰로 변신한 기물은 킹이나 폰이 아님을 확인 (의심 배제)
     this.kingSuspicionMap[key] = 0;
   }
 }
@@ -135,11 +126,9 @@ class MastermindAI {
     });
   }
 
-  // 이동 수 + 전술적 3번 룰 변신 후보군 수집
   getAllLegalActions(board, color) {
     const actions = [];
 
-    // 1. 일반 이동 액션 수집
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
         const p = board.grid[r][c];
@@ -149,15 +138,9 @@ class MastermindAI {
             actions.push({ actionType: 'MOVE', sr: r, sc: c, er: m.r, ec: m.c, moveObj: m, piece: p });
           }
 
-          // 2. 3번 룰(외형 변신)의 전략적 후보군 필터링 (AI 전용 고도화)
-          // 킹과 폰은 변신 불가, 체크 상태 아닐 때만 고려
           if (color === this.aiColor && this.difficulty === 'HARD' && p.realType !== 'K' && p.realType !== 'P' && !board.isCheck(color)) {
             const isThreatened = board.isSquareAttacked(r, c, this.opponentColor);
-            const currentMoveCount = moves.length;
-
-            // 조건 A (긴급 탈출): 적에게 위협받고 있으나 현재 탈출로가 부족할 때 -> 나이트/퀸 변신 고려
-            // 조건 B (엔드게임 돌파): 기물이 폰 장벽에 막혀 이동 수가 0~1개일 때 -> 나이트 변신 고려
-            if (isThreatened || currentMoveCount <= 1) {
+            if (isThreatened || moves.length <= 1) {
               const testDisguises = ['N', 'Q'];
               for (const dis of testDisguises) {
                 if (p.disguiseType !== dis) {
@@ -231,24 +214,44 @@ class MastermindAI {
           score += val;
         } else {
           score -= val;
-          // 추리된 의심 킹에 대한 공격 가산점
           const suspicion = this.tracker.kingSuspicionMap[`${r},${c}`] || 0;
           if (suspicion > 30 && board.isSquareAttacked(r, c, this.aiColor)) {
-            score += (suspicion * 2.2);
+            score += (suspicion * 2.5);
           }
         }
       }
     }
 
-    // 내 진짜 킹의 은신 유지 보너스
     const aiKing = board.findRealKingPiece(this.aiColor);
-    if (aiKing && aiKing.disguiseType !== 'K') score += 280;
+    if (aiKing && aiKing.disguiseType !== 'K') score += 200;
 
-    // 상대 결속 파괴 가산점
     const oppKing = board.findRealKingPiece(this.opponentColor);
-    if (oppKing && oppKing.disguiseType === 'K') score += 320;
+    if (oppKing && oppKing.disguiseType === 'K') score += 250;
 
     return score;
+  }
+
+  // [수정] 가짜 킹의 포획 대상에 따른 정밀 가중치 계산
+  calculateFakeKingTradeoff(board, act) {
+    if (act.actionType !== 'MOVE' || !act.piece.isFakeKing) return 0;
+    const target = board.grid[act.er][act.ec];
+    if (!target) return 0;
+
+    const capVal = PIECE_VALS[target.realType] || 0;
+
+    if (capVal >= 900) {
+      // ♛ 퀸 포획: 정체 들통나도 무조건 대이득 (+500 가산점)
+      return +500;
+    } else if (capVal >= 500) {
+      // ♜ 룩 포획: 충분히 남는 장사 (+200 가산점)
+      return +200;
+    } else if (capVal >= 300) {
+      // ♞/♝ 마이너 피스: 약간의 망설임 (약간 감점)
+      return -50;
+    } else {
+      // ♟ 폰 등 저가치 기물: 정체 까발려지면 절대 손해 (-350 페널티)
+      return -350;
+    }
   }
 
   minimax(board, depth, alpha, beta, isMaximizing) {
@@ -269,14 +272,8 @@ class MastermindAI {
         this.applyAction(nextBoard, act);
 
         let penalty = 0;
-        // 3번 룰 변신 시 1턴 소모(Tempo loss)에 대한 페널티
         if (act.actionType === 'TRANSFORM') penalty = -190;
-
-        // 가짜 킹이 사소한 폰을 잡아 정체를 드러내는 악수 방지
-        if (act.actionType === 'MOVE' && act.piece.isFakeKing && board.grid[act.er][act.ec]) {
-          const capVal = PIECE_VALS[board.grid[act.er][act.ec].realType] || 0;
-          if (capVal < 350) penalty = -320;
-        }
+        penalty += this.calculateFakeKingTradeoff(board, act);
 
         const ev = this.minimax(nextBoard, depth - 1, alpha, beta, false) + penalty;
         maxEval = Math.max(maxEval, ev);
@@ -311,10 +308,7 @@ class MastermindAI {
 
       let penalty = 0;
       if (act.actionType === 'TRANSFORM') penalty = -190;
-      if (act.actionType === 'MOVE' && act.piece.isFakeKing && board.grid[act.er][act.ec]) {
-        const capVal = PIECE_VALS[board.grid[act.er][act.ec].realType] || 0;
-        if (capVal < 350) penalty = -320;
-      }
+      penalty += this.calculateFakeKingTradeoff(board, act);
 
       const score = this.minimax(nextBoard, this.depth - 1, -Infinity, Infinity, false) + penalty;
       if (score > bestScore) {
@@ -328,10 +322,10 @@ class MastermindAI {
   getOptimalSwap() {
     const targetRow = (this.aiColor === 'W') ? 7 : 0;
     const candidates = [
-      { col: 1, weight: 45 }, { col: 6, weight: 45 }, // 나이트
-      { col: 0, weight: 25 }, { col: 7, weight: 25 }, // 룩
-      { col: 3, weight: 15 },                         // 퀸
-      { col: 2, weight: 15 }, { col: 5, weight: 15 }  // 비숍
+      { col: 1, weight: 45 }, { col: 6, weight: 45 },
+      { col: 0, weight: 25 }, { col: 7, weight: 25 },
+      { col: 3, weight: 15 },
+      { col: 2, weight: 15 }, { col: 5, weight: 15 }
     ];
     const total = candidates.reduce((s, c) => s + c.weight, 0);
     let rand = Math.random() * total;
